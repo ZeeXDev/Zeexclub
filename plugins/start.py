@@ -13,6 +13,7 @@ from bot import Bot
 from config import *
 from helper_func import *
 from database.database import *
+from plugins.adsgram import check_session_and_prompt  # NOUVELLE LIGNE
 
 BAN_SUPPORT = f"{BAN_SUPPORT}"
 
@@ -89,6 +90,15 @@ async def start_command(client: Client, message: Message):
         except IndexError:  
             return  
 
+        # ===== NOUVELLE LOGIQUE ADSGRAM =====
+        # Vérifier la session AdsGram AVANT de décoder
+        has_access, status_msg = await check_session_and_prompt(client, user_id, message)
+        
+        if not has_access:
+            # L'utilisateur n'a pas accès, le message de pub a déjà été envoyé
+            return
+        # ===== FIN NOUVELLE LOGIQUE =====
+
         string = await decode(base64_string)  
         argument = string.split("-")  
 
@@ -125,6 +135,11 @@ async def start_command(client: Client, message: Message):
             sent_msg = await send_with_progress(client, message, msg)  
             if sent_msg:  
                 sent_messages.append(sent_msg)  
+
+        # ===== AFFICHER LE STATUT DE SESSION =====
+        if status_msg and sent_messages:
+            await message.reply_text(f"<b>{status_msg}</b>")
+        # ===== FIN AFFICHAGE STATUT =====
 
         if FILE_AUTO_DELETE > 0 and sent_messages:  
             notification_msg = await message.reply(  
@@ -163,7 +178,8 @@ async def start_command(client: Client, message: Message):
                 [  
                     InlineKeyboardButton("ℹ️ À Propos", callback_data="about"),  
                     InlineKeyboardButton("❓ Aide", callback_data="help")  
-                ]  
+                ],
+                [InlineKeyboardButton("📺 Ma Session", callback_data="check_session")]  # NOUVEAU BOUTON
             ]  
         )  
         await message.reply_photo(  

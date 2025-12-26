@@ -18,12 +18,12 @@ from logging.handlers import RotatingFileHandler
 #rohit_1888 on Tg
 #--------------------------------------------
 #Bot token @Botfather
-TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "8205916004:AAEwYA2hW9PsmzFJasZXmoBMD08q3kdm9Hg")
+TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "8418741949:AAEtrEPr3UICxBL2GBwfJeX-mBjPncYkj_o")
 APP_ID = int(os.environ.get("APP_ID", "25926022")) #Your API ID from my.telegram.org
 API_HASH = os.environ.get("API_HASH", "30db27d9e56d854fb5e943723268db32") #Your API Hash from my.telegram.org
 #--------------------------------------------
 
-CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1003173430503")) #Your db channel Id
+CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1002841653181")) #Your db channel Id
 OWNER = os.environ.get("OWNER", "ZeeXDevBot") # Owner username without @
 OWNER_ID = int(os.environ.get("OWNER_ID", "8140299716")) # Owner id
 #--------------------------------------------
@@ -36,6 +36,10 @@ FSUB_LINK_EXPIRY = int(os.getenv("FSUB_LINK_EXPIRY", "840"))  # 0 means no expir
 BAN_SUPPORT = os.environ.get("BAN_SUPPORT", "https://t.me/BTZF_CHAT")
 TG_BOT_WORKERS = int(os.environ.get("TG_BOT_WORKERS", "200"))
 #--------------------------------------------
+# AdsGram Configuration (NOUVEAU)
+ADSGRAM_BLOCK_ID = os.environ.get("ADSGRAM_BLOCK_ID", "")  # Ton Block ID AdsGram
+FREE_SESSION_DURATION = int(os.environ.get("FREE_SESSION_DURATION", "20"))  # Durée en heures
+#--------------------------------------------
 START_PIC = os.environ.get("START_PIC", "https://ibb.co/nNSsK23f")
 FORCE_PIC = os.environ.get("FORCE_PIC", "https://ibb.co/nNSsK23f")
 #--------------------------------------------
@@ -46,7 +50,7 @@ ABOUT_TXT = "<b><blockquote>◈ Ceci est un bot OpenSource qui vous offre des fi
 #--------------------------------------------
 #--------------------------------------------
 START_MSG = os.environ.get("START_MESSAGE", "<b>Salut {first}\n\n<blockquote>Ceci est un bot OpenSource . ce bot ne dispose pas en lui dans sa base de donné les fichiers d'animes. si ceci viole vos conditions de droits d'auteurs. contactez nous à @ZeeXDevBot</blockquote></b>")
-FORCE_MSG = os.environ.get("FORCE_SUB_MESSAGE", "Salut {first}\n\n<b>Impossible de récupérer ce(s) fichier(s) : vous n’êtes pas membre de ce(s) canal(aux). Pour y accéder, rejoignez d’abord le(s) canal(aux), puis réessayez de récupérer les fichiers...</b>")
+FORCE_MSG = os.environ.get("FORCE_SUB_MESSAGE", "Salut {first}\n\n<b>Impossible de récupérer ce(s) fichier(s) : vous n'êtes pas membre de ce(s) canal(aux). Pour y accéder, rejoignez d'abord le(s) canal(aux), puis réessayez de récupérer les fichiers...</b>")
 
 CMD_TXT = """<blockquote><b>» Commandes administrateur :</b></blockquote>
 
@@ -67,6 +71,8 @@ CMD_TXT = """<blockquote><b>» Commandes administrateur :</b></blockquote>
 <b>›› /pbroadcast : pour envoyer un message à épinglé
 <b>›› /dbroadcast : pour envoyer un message éphémere aux utilisateurs
 <b>›› /admins :</b> Obtenir la liste des administrateurs
+<b>›› /givesession :</b> Donner une session gratuite à un utilisateur
+<b>›› /removesession :</b> Supprimer la session d'un utilisateur
 """
 #--------------------------------------------
 CUSTOM_CAPTION = os.environ.get("CUSTOM_CAPTION", None) #Définissez votre légende personnalisée ici, mettez None pour désactiver
@@ -100,4 +106,3 @@ logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
 def LOGGER(name: str) -> logging.Logger:
     return logging.getLogger(name)
-   
