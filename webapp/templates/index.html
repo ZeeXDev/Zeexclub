@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sessions Gratuites</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 Sessions Gratuites</h1>
+            <p>Regardez une pub pour obtenir 20h d'accès</p>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 16px;">Chargement...</p>
+        </div>
+
+        <div id="content" style="display: none;">
+            <div id="message"></div>
+
+            <div class="session-card">
+                <div class="session-status">
+                    <div class="status-indicator">
+                        <div class="status-dot" id="statusDot"></div>
+                        <span id="statusText">Inactif</span>
+                    </div>
+                </div>
+
+                <div class="time-remaining" id="timeRemaining">--:--:--</div>
+
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalAds">0</div>
+                        <div class="stat-label">Pubs vues</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="nextAdIn">--h</div>
+                        <div class="stat-label">Prochaine pub</div>
+                    </div>
+                </div>
+            </div>
+
+            <button class="watch-ad-btn" id="watchAdBtn" onclick="showAd()">
+                📺 Regarder une pub
+            </button>
+            <p class="info-text" id="buttonInfo">Gagnez 20h d'accès gratuit</p>
+        </div>
+    </div>
+
+    <script>
+        const BLOCK_ID = "{{ block_id }}";
+    </script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

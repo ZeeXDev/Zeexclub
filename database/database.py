@@ -137,7 +137,7 @@ class Rohit:
         self.fsub_name = 'fsub'
         self.rqst_fsub_name = 'request_forcesub'
         self.rqst_fsub_channel_name = 'request_forcesub_channel'
-        self.user_sessions_name = 'user_sessions'  # NOUVEAU
+        self.sessions_name = 'user_sessions'  # NOUVEAU pour AdsGram
 
     # USER DATA
     async def present_user(self, user_id: int) -> bool:
@@ -274,66 +274,114 @@ class Rohit:
         channel_ids = await self.show_channels()
         return channel_id in channel_ids
 
-    # ===== NOUVELLES MÉTHODES ADSGRAM =====
+    # ========== GESTION DES SESSIONS ADSGRAM (NOUVEAU) ==========
     
     async def get_user_session(self, user_id: int) -> Optional[Dict]:
-        """Récupère les informations de session d'un utilisateur"""
-        return await self.storage.find_one(self.user_sessions_name, {'_id': user_id})
-
-    async def set_free_session(self, user_id: int, duration_hours: int = 20) -> None:
-        """Active une session gratuite pour un utilisateur"""
-        expiry_time = datetime.now() + timedelta(hours=duration_hours)
-        await self.storage.update_one(
-            self.user_sessions_name,
-            {'_id': user_id},
-            {'$set': {
-                'has_free_session': True,
-                'session_expiry': expiry_time.isoformat(),
-                'last_ad_watch': datetime.now().isoformat()
-            }},
-            upsert=True
-        )
-
+        """Récupère les données de session d'un utilisateur"""
+        return await self.storage.find_one(self.sessions_name, {'_id': user_id})
+    
     async def has_active_session(self, user_id: int) -> bool:
         """Vérifie si l'utilisateur a une session active"""
         session = await self.get_user_session(user_id)
-        if not session or not session.get('has_free_session'):
+        if not session:
             return False
         
-        expiry = datetime.fromisoformat(session['session_expiry'])
-        if datetime.now() > expiry:
-            # Session expirée, la désactiver
-            await self.remove_free_session(user_id)
+        expiry = session.get('session_expiry')
+        if not expiry:
             return False
         
-        return True
-
-    async def remove_free_session(self, user_id: int) -> None:
-        """Supprime la session gratuite d'un utilisateur"""
+        # Convertir la string en datetime si nécessaire
+        if isinstance(expiry, str):
+            expiry = datetime.fromisoformat(expiry)
+        
+        return datetime.now() < expiry
+    
+    async def add_session_time(self, user_id: int, hours: int = 20) -> Dict:
+        """Ajoute du temps de session à un utilisateur"""
+        session = await self.get_user_session(user_id)
+        now = datetime.now()
+        
+        if session and await self.has_active_session(user_id):
+            # Prolonger la session existante
+            current_expiry = session.get('session_expiry')
+            if isinstance(current_expiry, str):
+                current_expiry = datetime.fromisoformat(current_expiry)
+            new_expiry = current_expiry + timedelta(hours=hours)
+        else:
+            # Créer une nouvelle session
+            new_expiry = now + timedelta(hours=hours)
+        
+        session_data = {
+            '_id': user_id,
+            'session_expiry': new_expiry.isoformat(),
+            'last_ad_watch': now.isoformat(),
+            'total_ads_watched': session.get('total_ads_watched', 0) + 1 if session else 1,
+            'updated_at': now.isoformat()
+        }
+        
         await self.storage.update_one(
-            self.user_sessions_name,
+            self.sessions_name,
             {'_id': user_id},
-            {'$set': {'has_free_session': False}}
+            {'$set': session_data},
+            upsert=True
         )
-
-    async def get_session_expiry(self, user_id: int) -> Optional[datetime]:
-        """Récupère la date d'expiration de la session"""
+        
+        return session_data
+    
+    async def get_session_remaining_time(self, user_id: int) -> Optional[timedelta]:
+        """Retourne le temps restant de la session"""
         session = await self.get_user_session(user_id)
-        if session and session.get('session_expiry'):
-            return datetime.fromisoformat(session['session_expiry'])
-        return None
-
+        if not session:
+            return None
+        
+        expiry = session.get('session_expiry')
+        if not expiry:
+            return None
+        
+        if isinstance(expiry, str):
+            expiry = datetime.fromisoformat(expiry)
+        
+        now = datetime.now()
+        if now >= expiry:
+            return timedelta(0)
+        
+        return expiry - now
+    
     async def can_watch_ad(self, user_id: int) -> bool:
-        """Vérifie si l'utilisateur peut regarder une nouvelle pub"""
+        """Vérifie si l'utilisateur peut regarder une pub (cooldown de 20h)"""
         session = await self.get_user_session(user_id)
-        if not session or not session.get('last_ad_watch'):
+        if not session:
             return True
         
-        last_watch = datetime.fromisoformat(session['last_ad_watch'])
-        time_diff = datetime.now() - last_watch
+        last_watch = session.get('last_ad_watch')
+        if not last_watch:
+            return True
         
-        # Peut regarder une pub si 20h se sont écoulées
-        return time_diff >= timedelta(hours=20)
+        if isinstance(last_watch, str):
+            last_watch = datetime.fromisoformat(last_watch)
+        
+        cooldown_end = last_watch + timedelta(hours=20)
+        return datetime.now() >= cooldown_end
+    
+    async def get_all_sessions(self) -> List[Dict]:
+        """Récupère toutes les sessions (pour l'admin)"""
+        return await self.storage.find_all(self.sessions_name)
+    
+    async def reset_user_session(self, user_id: int) -> None:
+        """Reset la session d'un utilisateur"""
+        await self.storage.delete_one(self.sessions_name, {'_id': user_id})
+    
+    async def get_ads_stats(self) -> Dict:
+        """Statistiques globales des pubs"""
+        sessions = await self.get_all_sessions()
+        total_watches = sum(s.get('total_ads_watched', 0) for s in sessions)
+        active_sessions = sum(1 for s in sessions if await self.has_active_session(s['_id']))
+        
+        return {
+            'total_ads_watched': total_watches,
+            'active_sessions': active_sessions,
+            'total_users_with_sessions': len(sessions)
+        }
 
 
 # Initialisation de la base de données

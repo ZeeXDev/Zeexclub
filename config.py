@@ -37,7 +37,7 @@ BAN_SUPPORT = os.environ.get("BAN_SUPPORT", "https://t.me/BTZF_CHAT")
 TG_BOT_WORKERS = int(os.environ.get("TG_BOT_WORKERS", "200"))
 #--------------------------------------------
 # AdsGram Configuration (NOUVEAU)
-ADSGRAM_BLOCK_ID = os.environ.get("ADSGRAM_BLOCK_ID", "")  # Ton Block ID AdsGram
+ADSGRAM_BLOCK_ID = os.environ.get("ADSGRAM_BLOCK_ID", "int-19928")  # Ton Block ID AdsGram
 FREE_SESSION_DURATION = int(os.environ.get("FREE_SESSION_DURATION", "20"))  # Durée en heures
 #--------------------------------------------
 START_PIC = os.environ.get("START_PIC", "https://ibb.co/nNSsK23f")
