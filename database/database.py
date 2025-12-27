@@ -1,156 +1,129 @@
 #Codeflix_Botz
 #rohit_1888 on Tg
 
-import motor, asyncio
-import motor.motor_asyncio
-import time
-import pymongo, os
-from config import DB_URI, DB_NAME
-from bot import Bot
-import logging
+import asyncio
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List
-
-dbclient = pymongo.MongoClient(DB_URI)
-database = dbclient[DB_NAME]
+import logging
+from typing import List, Dict, Any, Optional
+from motor.motor_asyncio import AsyncIOMotorClient
+import os
 
 logging.basicConfig(level=logging.INFO)
 
+# Configuration MongoDB
+MONGODB_URI = os.environ.get("DB_URI", "")
+DB_NAME = os.environ.get("DB_NAME", "Cluster0")
+
 
 class Rohit:
-
-    def __init__(self, DB_URI, DB_NAME):
-        self.dbclient = motor.motor_asyncio.AsyncIOMotorClient(DB_URI)
-        self.database = self.dbclient[DB_NAME]
-
-        self.channel_data = self.database['channels']
-        self.admins_data = self.database['admins']
-        self.user_data = self.database['users']
-        self.banned_user_data = self.database['banned_user']
-        self.autho_user_data = self.database['autho_user']
-        self.del_timer_data = self.database['del_timer']
-        self.fsub_data = self.database['fsub']   
-        self.rqst_fsub_data = self.database['request_forcesub']
-        self.rqst_fsub_Channel_data = self.database['request_forcesub_channel']
-        self.user_sessions = self.database['user_sessions']  # NOUVEAU pour AdsGram
-
+    def __init__(self):
+        # Connexion MongoDB
+        if MONGODB_URI:
+            self.client = AsyncIOMotorClient(MONGODB_URI)
+            self.db = self.client[DB_NAME]
+        else:
+            raise Exception("DB_URI non configuré dans les variables d'environnement")
+        
+        # Collections MongoDB
+        self.users = self.db['users']
+        self.admins = self.db['admins']
+        self.banned_users = self.db['banned_users']
+        self.channels = self.db['channels']
+        self.settings = self.db['settings']
+        self.request_fsub = self.db['request_forcesub']
+        self.user_sessions = self.db['user_sessions']  # NOUVEAU pour AdsGram
 
     # USER DATA
-    async def present_user(self, user_id: int):
-        found = await self.user_data.find_one({'_id': user_id})
+    async def present_user(self, user_id: int) -> bool:
+        found = await self.users.find_one({'_id': user_id})
         return bool(found)
 
-    async def add_user(self, user_id: int):
-        await self.user_data.insert_one({'_id': user_id})
-        return
+    async def add_user(self, user_id: int) -> None:
+        if not await self.present_user(user_id):
+            await self.users.insert_one({'_id': user_id})
 
-    async def full_userbase(self):
-        user_docs = await self.user_data.find().to_list(length=None)
-        user_ids = [doc['_id'] for doc in user_docs]
-        return user_ids
+    async def full_userbase(self) -> List[int]:
+        users = await self.users.find({}).to_list(None)
+        return [user['_id'] for user in users]
 
-    async def del_user(self, user_id: int):
-        await self.user_data.delete_one({'_id': user_id})
-        return
-
+    async def del_user(self, user_id: int) -> None:
+        await self.users.delete_one({'_id': user_id})
 
     # ADMIN DATA
-    async def admin_exist(self, admin_id: int):
-        found = await self.admins_data.find_one({'_id': admin_id})
+    async def admin_exist(self, admin_id: int) -> bool:
+        found = await self.admins.find_one({'_id': admin_id})
         return bool(found)
 
-    async def add_admin(self, admin_id: int):
+    async def add_admin(self, admin_id: int) -> None:
         if not await self.admin_exist(admin_id):
-            await self.admins_data.insert_one({'_id': admin_id})
-            return
+            await self.admins.insert_one({'_id': admin_id})
 
-    async def del_admin(self, admin_id: int):
-        if await self.admin_exist(admin_id):
-            await self.admins_data.delete_one({'_id': admin_id})
-            return
+    async def del_admin(self, admin_id: int) -> None:
+        await self.admins.delete_one({'_id': admin_id})
 
-    async def get_all_admins(self):
-        users_docs = await self.admins_data.find().to_list(length=None)
-        user_ids = [doc['_id'] for doc in users_docs]
-        return user_ids
-
+    async def get_all_admins(self) -> List[int]:
+        admins = await self.admins.find({}).to_list(None)
+        return [admin['_id'] for admin in admins]
 
     # BAN USER DATA
-    async def ban_user_exist(self, user_id: int):
-        found = await self.banned_user_data.find_one({'_id': user_id})
+    async def ban_user_exist(self, user_id: int) -> bool:
+        found = await self.banned_users.find_one({'_id': user_id})
         return bool(found)
 
-    async def add_ban_user(self, user_id: int):
+    async def add_ban_user(self, user_id: int) -> None:
         if not await self.ban_user_exist(user_id):
-            await self.banned_user_data.insert_one({'_id': user_id})
-            return
+            await self.banned_users.insert_one({'_id': user_id})
 
-    async def del_ban_user(self, user_id: int):
-        if await self.ban_user_exist(user_id):
-            await self.banned_user_data.delete_one({'_id': user_id})
-            return
+    async def del_ban_user(self, user_id: int) -> None:
+        await self.banned_users.delete_one({'_id': user_id})
 
-    async def get_ban_users(self):
-        users_docs = await self.banned_user_data.find().to_list(length=None)
-        user_ids = [doc['_id'] for doc in users_docs]
-        return user_ids
-
+    async def get_ban_users(self) -> List[int]:
+        banned = await self.banned_users.find({}).to_list(None)
+        return [user['_id'] for user in banned]
 
     # AUTO DELETE TIMER SETTINGS
-    async def set_del_timer(self, value: int):        
-        existing = await self.del_timer_data.find_one({})
-        if existing:
-            await self.del_timer_data.update_one({}, {'$set': {'value': value}})
-        else:
-            await self.del_timer_data.insert_one({'value': value})
+    async def set_del_timer(self, value: int) -> None:
+        await self.settings.update_one(
+            {'_id': 'del_timer'},
+            {'$set': {'value': value}},
+            upsert=True
+        )
 
-    async def get_del_timer(self):
-        data = await self.del_timer_data.find_one({})
-        if data:
-            return data.get('value', 600)
-        return 0
-
+    async def get_del_timer(self) -> int:
+        data = await self.settings.find_one({'_id': 'del_timer'})
+        return data.get('value', 600) if data else 0
 
     # CHANNEL MANAGEMENT
-    async def channel_exist(self, channel_id: int):
-        found = await self.fsub_data.find_one({'_id': channel_id})
+    async def channel_exist(self, channel_id: int) -> bool:
+        found = await self.channels.find_one({'_id': channel_id})
         return bool(found)
 
-    async def add_channel(self, channel_id: int):
+    async def add_channel(self, channel_id: int, mode: str = "off") -> None:
         if not await self.channel_exist(channel_id):
-            await self.fsub_data.insert_one({'_id': channel_id})
-            return
+            await self.channels.insert_one({'_id': channel_id, 'mode': mode})
 
-    async def rem_channel(self, channel_id: int):
-        if await self.channel_exist(channel_id):
-            await self.fsub_data.delete_one({'_id': channel_id})
-            return
+    async def rem_channel(self, channel_id: int) -> None:
+        await self.channels.delete_one({'_id': channel_id})
 
-    async def show_channels(self):
-        channel_docs = await self.fsub_data.find().to_list(length=None)
-        channel_ids = [doc['_id'] for doc in channel_docs]
-        return channel_ids
+    async def show_channels(self) -> List[int]:
+        channels = await self.channels.find({}).to_list(None)
+        return [channel['_id'] for channel in channels]
 
-    
-    # Get current mode of a channel
-    async def get_channel_mode(self, channel_id: int):
-        data = await self.fsub_data.find_one({'_id': channel_id})
+    async def get_channel_mode(self, channel_id: int) -> str:
+        data = await self.channels.find_one({'_id': channel_id})
         return data.get("mode", "off") if data else "off"
 
-    # Set mode of a channel
-    async def set_channel_mode(self, channel_id: int, mode: str):
-        await self.fsub_data.update_one(
+    async def set_channel_mode(self, channel_id: int, mode: str) -> None:
+        await self.channels.update_one(
             {'_id': channel_id},
             {'$set': {'mode': mode}},
             upsert=True
         )
 
     # REQUEST FORCE-SUB MANAGEMENT
-
-    # Add the user to the set of users for a specific channel
-    async def req_user(self, channel_id: int, user_id: int):
+    async def req_user(self, channel_id: int, user_id: int) -> None:
         try:
-            await self.rqst_fsub_Channel_data.update_one(
+            await self.request_fsub.update_one(
                 {'_id': int(channel_id)},
                 {'$addToSet': {'user_ids': int(user_id)}},
                 upsert=True
@@ -158,39 +131,26 @@ class Rohit:
         except Exception as e:
             print(f"[DB ERROR] Failed to add user to request list: {e}")
 
-
-    # Method 2: Remove a user from the channel set
-    async def del_req_user(self, channel_id: int, user_id: int):
-        # Remove the user from the set of users for the channel
-        await self.rqst_fsub_Channel_data.update_one(
-            {'_id': channel_id}, 
+    async def del_req_user(self, channel_id: int, user_id: int) -> None:
+        await self.request_fsub.update_one(
+            {'_id': channel_id},
             {'$pull': {'user_ids': user_id}}
         )
 
-    # Check if the user exists in the set of the channel's users
-    async def req_user_exist(self, channel_id: int, user_id: int):
+    async def req_user_exist(self, channel_id: int, user_id: int) -> bool:
         try:
-            found = await self.rqst_fsub_Channel_data.find_one({
-                '_id': int(channel_id),
-                'user_ids': int(user_id)
-            })
-            return bool(found)
+            found = await self.request_fsub.find_one({'_id': int(channel_id)})
+            if found:
+                user_ids = found.get('user_ids', [])
+                return int(user_id) in user_ids
+            return False
         except Exception as e:
             print(f"[DB ERROR] Failed to check request list: {e}")
-            return False  
-
-
-    # Method to check if a channel exists using show_channels
-    async def reqChannel_exist(self, channel_id: int):
-        # Get the list of all channel IDs from the database
-        channel_ids = await self.show_channels()
-        
-        # Check if the given channel_id is in the list of channel IDs
-        if channel_id in channel_ids:
-            return True
-        else:
             return False
 
+    async def reqChannel_exist(self, channel_id: int) -> bool:
+        channel_ids = await self.show_channels()
+        return channel_id in channel_ids
 
     # ========== GESTION DES SESSIONS ADSGRAM (NOUVEAU) ==========
     
@@ -301,4 +261,5 @@ class Rohit:
         }
 
 
-db = Rohit(DB_URI, DB_NAME)
+# Initialisation de la base de données
+db = Rohit()
