@@ -8,7 +8,7 @@ from config import ADSGRAM_BLOCK_ID, FREE_SESSION_DURATION
 from datetime import datetime, timedelta
 
 # URL de ta WebApp (à changer après hébergement)
-WEBAPP_URL = "http://localhost:5000"
+WEBAPP_URL = "https://zeexclub-1.onrender.com"
 
 async def check_session_and_prompt(client: Client, user_id: int, message):
     """
