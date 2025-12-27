@@ -182,7 +182,7 @@ async def my_session_command(client: Client, message):
     await message.reply_text(text, reply_markup=keyboard)
 
 
-# ========== COMMANDES ADMIN ==========
+# =========== COMMANDES ADMIN ===========
 
 @Client.on_message(filters.command("givesession") & filters.private)
 async def give_session_admin(client: Client, message):
