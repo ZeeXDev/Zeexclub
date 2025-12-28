@@ -6,13 +6,15 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 import sys
 import os
-import asyncio
 
 # Ajouter le chemin parent pour importer database
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database.database import db
-from config import ADSGRAM_BLOCK_ID
+from config import ADSGRAM_BLOCK_ID, DB_URI, DB_NAME
+
+# Import asyncio
+import asyncio
+import motor.motor_asyncio
 
 # Définir explicitement les chemins pour Flask
 template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
@@ -23,19 +25,147 @@ app = Flask(__name__,
             static_folder=static_dir)
 CORS(app)
 
-# Helper pour exécuter les fonctions async
+# Connexion MongoDB directe pour la WebApp
+client = motor.motor_asyncio.AsyncIOMotorClient(DB_URI)
+database = client[DB_NAME]
+user_sessions = database['user_sessions']
+
+
+# Helper pour exécuter les fonctions async SANS fermer le loop
 def run_async(coro):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    """Exécute une coroutine de manière sûre"""
     try:
-        return loop.run_until_complete(coro)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(coro)
+        return result
+    except Exception as e:
+        print(f"Error in run_async: {e}")
+        return None
     finally:
-        loop.close()
+        try:
+            loop.close()
+        except:
+            pass
+
+
+# ========== FONCTIONS DATABASE (copie simplifiée) ==========
+
+async def get_user_session(user_id: int):
+    """Récupère la session d'un utilisateur"""
+    try:
+        return await user_sessions.find_one({'_id': user_id})
+    except Exception as e:
+        print(f"Error getting session: {e}")
+        return None
+
+
+async def has_active_session(user_id: int):
+    """Vérifie si la session est active"""
+    try:
+        session = await get_user_session(user_id)
+        if not session:
+            return False
+        
+        expiry = session.get('session_expiry')
+        if not expiry:
+            return False
+        
+        if isinstance(expiry, str):
+            expiry = datetime.fromisoformat(expiry)
+        
+        return datetime.now() < expiry
+    except Exception as e:
+        print(f"Error checking active session: {e}")
+        return False
+
+
+async def get_session_remaining_time(user_id: int):
+    """Temps restant de session"""
+    try:
+        session = await get_user_session(user_id)
+        if not session:
+            return None
+        
+        expiry = session.get('session_expiry')
+        if not expiry:
+            return None
+        
+        if isinstance(expiry, str):
+            expiry = datetime.fromisoformat(expiry)
+        
+        now = datetime.now()
+        if now >= expiry:
+            return timedelta(0)
+        
+        return expiry - now
+    except Exception as e:
+        print(f"Error getting remaining time: {e}")
+        return None
+
+
+async def can_watch_ad(user_id: int):
+    """Vérifie si l'utilisateur peut regarder une pub"""
+    try:
+        session = await get_user_session(user_id)
+        if not session:
+            return True
+        
+        last_watch = session.get('last_ad_watch')
+        if not last_watch:
+            return True
+        
+        if isinstance(last_watch, str):
+            last_watch = datetime.fromisoformat(last_watch)
+        
+        cooldown_end = last_watch + timedelta(hours=20)
+        return datetime.now() >= cooldown_end
+    except Exception as e:
+        print(f"Error checking ad cooldown: {e}")
+        return True
+
+
+async def add_session_time(user_id: int, hours: int = 20):
+    """Ajoute du temps de session"""
+    try:
+        session = await get_user_session(user_id)
+        now = datetime.now()
+        
+        if session and await has_active_session(user_id):
+            current_expiry = session.get('session_expiry')
+            if isinstance(current_expiry, str):
+                current_expiry = datetime.fromisoformat(current_expiry)
+            new_expiry = current_expiry + timedelta(hours=hours)
+        else:
+            new_expiry = now + timedelta(hours=hours)
+        
+        session_data = {
+            '_id': user_id,
+            'session_expiry': new_expiry.isoformat(),
+            'last_ad_watch': now.isoformat(),
+            'total_ads_watched': session.get('total_ads_watched', 0) + 1 if session else 1,
+            'updated_at': now.isoformat()
+        }
+        
+        await user_sessions.update_one(
+            {'_id': user_id},
+            {'$set': session_data},
+            upsert=True
+        )
+        
+        return session_data
+    except Exception as e:
+        print(f"Error adding session time: {e}")
+        return None
+
+
+# ========== ROUTES ==========
 
 @app.route('/')
 def index():
     """Page principale de la WebApp"""
     return render_template('index.html', block_id=ADSGRAM_BLOCK_ID)
+
 
 @app.route('/api/session', methods=['POST'])
 def get_session():
@@ -47,11 +177,11 @@ def get_session():
         return jsonify({'error': 'user_id requis'}), 400
     
     try:
-        session = run_async(db.get_user_session(user_id))
-        has_active = run_async(db.has_active_session(user_id))
-        can_watch = run_async(db.can_watch_ad(user_id))
+        session = run_async(get_user_session(user_id))
+        has_active = run_async(has_active_session(user_id))
+        can_watch = run_async(can_watch_ad(user_id))
         
-        remaining_time = run_async(db.get_session_remaining_time(user_id))
+        remaining_time = run_async(get_session_remaining_time(user_id))
         remaining_seconds = int(remaining_time.total_seconds()) if remaining_time else 0
         
         # Calculer le temps avant la prochaine pub
@@ -78,7 +208,8 @@ def get_session():
     
     except Exception as e:
         print(f"Erreur dans get_session: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/reward', methods=['POST'])
 def reward_session():
@@ -91,7 +222,7 @@ def reward_session():
     
     try:
         # Vérifier si l'utilisateur peut regarder une pub
-        can_watch = run_async(db.can_watch_ad(user_id))
+        can_watch = run_async(can_watch_ad(user_id))
         
         if not can_watch:
             return jsonify({
@@ -100,7 +231,13 @@ def reward_session():
             }), 400
         
         # Ajouter 20h de session
-        session_data = run_async(db.add_session_time(user_id, hours=20))
+        session_data = run_async(add_session_time(user_id, hours=20))
+        
+        if not session_data:
+            return jsonify({
+                'success': False,
+                'error': 'Erreur lors de l\'ajout de la session'
+            }), 500
         
         return jsonify({
             'success': True,
@@ -111,31 +248,8 @@ def reward_session():
     
     except Exception as e:
         print(f"Erreur dans reward_session: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/admin/stats', methods=['POST'])
-def admin_stats():
-    """Admin: Statistiques globales"""
-    data = request.json
-    admin_id = data.get('admin_id')
-    
-    if not admin_id:
-        return jsonify({'error': 'admin_id requis'}), 400
-    
-    try:
-        # Vérifier que c'est un admin
-        is_admin = run_async(db.admin_exist(admin_id))
-        if not is_admin:
-            return jsonify({'error': 'Non autorisé'}), 403
-        
-        stats = run_async(db.get_ads_stats())
-        return jsonify({
-            'success': True,
-            'stats': stats
-        })
-    except Exception as e:
-        print(f"Erreur dans admin_stats: {e}")
-        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("=" * 50)
@@ -144,6 +258,7 @@ if __name__ == '__main__':
     print(f"📁 Template folder: {template_dir}")
     print(f"📁 Static folder: {static_dir}")
     print(f"📺 Block ID: {ADSGRAM_BLOCK_ID if ADSGRAM_BLOCK_ID else 'NON CONFIGURÉ ⚠️'}")
+    print(f"🗄️  Database: {DB_NAME}")
     print("=" * 50)
     print(f"🌐 Accéder à: http://localhost:5000")
     print("=" * 50)
@@ -159,5 +274,5 @@ if __name__ == '__main__':
         print(f"❌ ERREUR: Le dossier static/ n'existe pas à {static_dir}")
     
     # Démarrer le serveur Flask
-    # debug=True pour voir les erreurs en développement
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
