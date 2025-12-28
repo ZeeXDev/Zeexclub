@@ -7,10 +7,10 @@ from datetime import datetime, timedelta
 import sys
 import os
 
-# Ajouter le chemin parent pour importer database
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from config import ADSGRAM_BLOCK_ID, DB_URI, DB_NAME
+# Variables d'environnement directement (pas d'import de config.py)
+ADSGRAM_BLOCK_ID = os.environ.get("ADSGRAM_BLOCK_ID", "int-20082")
+DB_URI = os.environ.get("DB_URI") or os.environ.get("DATABASE_URL", "mongodb+srv://Ethan:Ethan123@telegrambots.lva9j.mongodb.net/?retryWrites=true&w=majority&appName=TELEGRAMBOTS")
+DB_NAME = os.environ.get("DB_NAME", "Cluster0")
 
 # Import asyncio
 import asyncio
@@ -26,6 +26,12 @@ app = Flask(__name__,
 CORS(app)
 
 # Connexion MongoDB directe pour la WebApp
+print(f"[WEBAPP] Connexion à MongoDB: {DB_NAME}")
+if not DB_URI:
+    print("❌ [WEBAPP] DB_URI non configuré!")
+else:
+    print(f"✅ [WEBAPP] DB_URI configuré")
+
 client = motor.motor_asyncio.AsyncIOMotorClient(DB_URI)
 database = client[DB_NAME]
 user_sessions = database['user_sessions']
@@ -40,7 +46,9 @@ def run_async(coro):
         result = loop.run_until_complete(coro)
         return result
     except Exception as e:
-        print(f"Error in run_async: {e}")
+        print(f"❌ [WEBAPP] Error in run_async: {e}")
+        import traceback
+        traceback.print_exc()
         return None
     finally:
         try:
@@ -54,9 +62,14 @@ def run_async(coro):
 async def get_user_session(user_id: int):
     """Récupère la session d'un utilisateur"""
     try:
-        return await user_sessions.find_one({'_id': user_id})
+        print(f"[WEBAPP] Getting session for user {user_id}")
+        result = await user_sessions.find_one({'_id': user_id})
+        print(f"[WEBAPP] Session found: {bool(result)}")
+        return result
     except Exception as e:
-        print(f"Error getting session: {e}")
+        print(f"❌ [WEBAPP] Error getting session: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -76,7 +89,7 @@ async def has_active_session(user_id: int):
         
         return datetime.now() < expiry
     except Exception as e:
-        print(f"Error checking active session: {e}")
+        print(f"❌ [WEBAPP] Error checking active session: {e}")
         return False
 
 
@@ -100,7 +113,7 @@ async def get_session_remaining_time(user_id: int):
         
         return expiry - now
     except Exception as e:
-        print(f"Error getting remaining time: {e}")
+        print(f"❌ [WEBAPP] Error getting remaining time: {e}")
         return None
 
 
@@ -121,13 +134,15 @@ async def can_watch_ad(user_id: int):
         cooldown_end = last_watch + timedelta(hours=20)
         return datetime.now() >= cooldown_end
     except Exception as e:
-        print(f"Error checking ad cooldown: {e}")
+        print(f"❌ [WEBAPP] Error checking ad cooldown: {e}")
         return True
 
 
 async def add_session_time(user_id: int, hours: int = 20):
     """Ajoute du temps de session"""
     try:
+        print(f"[WEBAPP] Adding {hours}h session for user {user_id}")
+        
         session = await get_user_session(user_id)
         now = datetime.now()
         
@@ -136,8 +151,10 @@ async def add_session_time(user_id: int, hours: int = 20):
             if isinstance(current_expiry, str):
                 current_expiry = datetime.fromisoformat(current_expiry)
             new_expiry = current_expiry + timedelta(hours=hours)
+            print(f"[WEBAPP] Extending existing session")
         else:
             new_expiry = now + timedelta(hours=hours)
+            print(f"[WEBAPP] Creating new session")
         
         session_data = {
             '_id': user_id,
@@ -147,15 +164,19 @@ async def add_session_time(user_id: int, hours: int = 20):
             'updated_at': now.isoformat()
         }
         
-        await user_sessions.update_one(
+        result = await user_sessions.update_one(
             {'_id': user_id},
             {'$set': session_data},
             upsert=True
         )
         
+        print(f"✅ [WEBAPP] Session added successfully. Matched: {result.matched_count}, Modified: {result.modified_count}, Upserted: {result.upserted_id}")
+        
         return session_data
     except Exception as e:
-        print(f"Error adding session time: {e}")
+        print(f"❌ [WEBAPP] Error adding session time: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -173,8 +194,11 @@ def get_session():
     data = request.json
     user_id = data.get('user_id')
     
+    print(f"[WEBAPP API] /api/session called for user {user_id}")
+    
     if not user_id:
-        return jsonify({'error': 'user_id requis'}), 400
+        print("❌ [WEBAPP API] Missing user_id")
+        return jsonify({'success': False, 'error': 'user_id requis'}), 400
     
     try:
         session = run_async(get_user_session(user_id))
@@ -196,7 +220,7 @@ def get_session():
                 if cooldown_remaining < 0:
                     cooldown_remaining = 0
         
-        return jsonify({
+        response = {
             'success': True,
             'has_active_session': has_active,
             'remaining_seconds': remaining_seconds,
@@ -204,10 +228,15 @@ def get_session():
             'cooldown_remaining': cooldown_remaining,
             'total_ads_watched': session.get('total_ads_watched', 0) if session else 0,
             'session_expiry': session.get('session_expiry') if session else None
-        })
+        }
+        
+        print(f"✅ [WEBAPP API] Response: {response}")
+        return jsonify(response)
     
     except Exception as e:
-        print(f"Erreur dans get_session: {e}")
+        print(f"❌ [WEBAPP API] Error in get_session: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -217,14 +246,19 @@ def reward_session():
     data = request.json
     user_id = data.get('user_id')
     
+    print(f"[WEBAPP API] /api/reward called for user {user_id}")
+    
     if not user_id:
-        return jsonify({'error': 'user_id requis'}), 400
+        print("❌ [WEBAPP API] Missing user_id")
+        return jsonify({'success': False, 'error': 'user_id requis'}), 400
     
     try:
         # Vérifier si l'utilisateur peut regarder une pub
         can_watch = run_async(can_watch_ad(user_id))
+        print(f"[WEBAPP API] Can watch ad: {can_watch}")
         
         if not can_watch:
+            print("❌ [WEBAPP API] Cooldown active")
             return jsonify({
                 'success': False,
                 'error': 'Cooldown actif, réessayez plus tard'
@@ -234,21 +268,38 @@ def reward_session():
         session_data = run_async(add_session_time(user_id, hours=20))
         
         if not session_data:
+            print("❌ [WEBAPP API] Failed to add session")
             return jsonify({
                 'success': False,
                 'error': 'Erreur lors de l\'ajout de la session'
             }), 500
         
-        return jsonify({
+        response = {
             'success': True,
             'message': '20h de session ajoutées',
             'session_expiry': session_data.get('session_expiry'),
             'total_ads_watched': session_data.get('total_ads_watched')
-        })
+        }
+        
+        print(f"✅ [WEBAPP API] Session added successfully: {response}")
+        return jsonify(response)
     
     except Exception as e:
-        print(f"Erreur dans reward_session: {e}")
+        print(f"❌ [WEBAPP API] Error in reward_session: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/health')
+def health():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'ok',
+        'db_uri_configured': bool(DB_URI),
+        'db_name': DB_NAME,
+        'block_id_configured': bool(ADSGRAM_BLOCK_ID)
+    })
 
 
 if __name__ == '__main__':
@@ -257,15 +308,20 @@ if __name__ == '__main__':
     print("=" * 50)
     print(f"📁 Template folder: {template_dir}")
     print(f"📁 Static folder: {static_dir}")
-    print(f"📺 Block ID: {ADSGRAM_BLOCK_ID if ADSGRAM_BLOCK_ID else 'NON CONFIGURÉ ⚠️'}")
+    print(f"📺 Block ID: {ADSGRAM_BLOCK_ID if ADSGRAM_BLOCK_ID else '❌ NON CONFIGURÉ'}")
     print(f"🗄️  Database: {DB_NAME}")
+    print(f"🔗 DB_URI: {'✅ Configuré' if DB_URI else '❌ NON CONFIGURÉ'}")
     print("=" * 50)
     print(f"🌐 Accéder à: http://localhost:5000")
     print("=" * 50)
     
     if not ADSGRAM_BLOCK_ID:
         print("\n⚠️  ATTENTION: Block ID AdsGram non configuré!")
-        print("Définissez la variable ADSGRAM_BLOCK_ID dans config.py\n")
+        print("Définissez la variable ADSGRAM_BLOCK_ID\n")
+    
+    if not DB_URI:
+        print("\n❌ ERREUR CRITIQUE: DB_URI non configuré!")
+        print("Définissez la variable DB_URI ou DATABASE_URL\n")
     
     # Vérifier que les dossiers existent
     if not os.path.exists(template_dir):
