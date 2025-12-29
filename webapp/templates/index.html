@@ -7,8 +7,53 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .debug-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #000;
+            color: #0f0;
+            font-family: monospace;
+            font-size: 11px;
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            border-top: 2px solid #0f0;
+            z-index: 9999;
+        }
+        .debug-panel .log-entry {
+            margin: 2px 0;
+            word-wrap: break-word;
+        }
+        .debug-panel .log-error {
+            color: #f00;
+        }
+        .debug-panel .log-success {
+            color: #0f0;
+        }
+        .debug-panel .log-info {
+            color: #00f;
+        }
+        .debug-toggle {
+            position: fixed;
+            bottom: 210px;
+            right: 10px;
+            background: #000;
+            color: #0f0;
+            border: 2px solid #0f0;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 10000;
+            font-size: 12px;
+        }
+    </style>
 </head>
 <body>
+    <button class="debug-toggle" onclick="toggleDebug()">🐛 Logs</button>
+    
     <div class="container">
         <div class="header">
             <h1>🎬 Sessions Gratuites</h1>
@@ -52,8 +97,49 @@
         </div>
     </div>
 
+    <div class="debug-panel" id="debugPanel"></div>
+
     <script>
         const BLOCK_ID = "{{ block_id }}";
+        
+        // Système de logs
+        let debugVisible = true;
+        const debugPanel = document.getElementById('debugPanel');
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            debugPanel.appendChild(logEntry);
+            debugPanel.scrollTop = debugPanel.scrollHeight;
+            console.log(`[${type.toUpperCase()}]`, message);
+        }
+        
+        function toggleDebug() {
+            debugVisible = !debugVisible;
+            debugPanel.style.display = debugVisible ? 'block' : 'none';
+        }
+        
+        // Override console
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        console.log = function(...args) {
+            addLog(args.join(' '), 'info');
+            originalLog.apply(console, args);
+        };
+        
+        console.error = function(...args) {
+            addLog(args.join(' '), 'error');
+            originalError.apply(console, args);
+        };
+        
+        console.warn = function(...args) {
+            addLog(args.join(' '), 'info');
+            originalWarn.apply(console, args);
+        };
     </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
